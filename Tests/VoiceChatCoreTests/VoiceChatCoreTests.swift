@@ -413,7 +413,7 @@ final class VoiceChatSessionControllerTests: XCTestCase {
 @MainActor
 final class VoiceChatViewModelTests: XCTestCase {
     func testApplyEventsUpdatesChatAndStatus() {
-        let viewModel = VoiceChatViewModel { _, store, _ in
+        let viewModel = VoiceChatViewModel { _, _, store, _ in
             VoiceChatSessionController(
                 recognizer: MockSpeechRecognizer(events: [.stopped]),
                 llmClient: MockLLMClient(chunks: []),
@@ -437,7 +437,7 @@ final class VoiceChatViewModelTests: XCTestCase {
     }
 
     func testToggleTalkingStartsAndStops() async throws {
-        let viewModel = VoiceChatViewModel { _, store, _ in
+        let viewModel = VoiceChatViewModel { _, _, store, _ in
             VoiceChatSessionController(
                 recognizer: MockSpeechRecognizer(events: [.stopped]),
                 llmClient: MockLLMClient(chunks: []),
@@ -454,7 +454,7 @@ final class VoiceChatViewModelTests: XCTestCase {
     }
 
     func testAssistantDeltaStartsNewBubbleAfterNewUserMessage() {
-        let viewModel = VoiceChatViewModel { _, store, _ in
+        let viewModel = VoiceChatViewModel { _, _, store, _ in
             VoiceChatSessionController(
                 recognizer: MockSpeechRecognizer(events: [.stopped]),
                 llmClient: MockLLMClient(chunks: []),
@@ -481,7 +481,7 @@ final class VoiceChatViewModelTests: XCTestCase {
 
     func testClearChatRemovesVisibleMessagesAndStoreHistory() throws {
         let store = InMemoryConversationStore()
-        let viewModel = VoiceChatViewModel(conversationStore: store) { _, store, _ in
+        let viewModel = VoiceChatViewModel(conversationStore: store) { _, _, store, _ in
             VoiceChatSessionController(
                 recognizer: MockSpeechRecognizer(events: [.stopped]),
                 llmClient: MockLLMClient(chunks: []),
@@ -500,6 +500,34 @@ final class VoiceChatViewModelTests: XCTestCase {
         XCTAssertTrue(viewModel.messages.isEmpty)
         XCTAssertTrue(store.messages.isEmpty)
         XCTAssertEqual(viewModel.status, .idle)
+    }
+
+    func testLMStudioBaseURLDefaultsNormalizesAndPersists() {
+        let suiteName = "VoiceChatViewModelTests-\(UUID().uuidString)"
+        let settings = UserDefaults(suiteName: suiteName)!
+        settings.removePersistentDomain(forName: suiteName)
+
+        let viewModel = VoiceChatViewModel(settings: settings) { _, _, store, _ in
+            VoiceChatSessionController(
+                recognizer: MockSpeechRecognizer(events: [.stopped]),
+                llmClient: MockLLMClient(chunks: []),
+                synthesizer: MockSynthesizer(),
+                store: store
+            )
+        }
+
+        XCTAssertEqual(viewModel.lmStudioBaseURL?.absoluteString, "http://100.127.238.44:1234")
+
+        viewModel.lmStudioBaseURLText = "localhost:1234/v1/chat/completions"
+
+        XCTAssertEqual(viewModel.lmStudioBaseURL?.absoluteString, "http://localhost:1234")
+        XCTAssertEqual(settings.string(forKey: "lmStudioBaseURL"), "localhost:1234/v1/chat/completions")
+    }
+
+    func testInvalidLMStudioBaseURLIsRejected() {
+        XCTAssertNil(VoiceChatViewModel.normalizedBaseURL(from: ""))
+        XCTAssertNil(VoiceChatViewModel.normalizedBaseURL(from: "file:///tmp/server"))
+        XCTAssertNil(VoiceChatViewModel.normalizedBaseURL(from: "not a url"))
     }
 }
 

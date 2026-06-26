@@ -3,10 +3,10 @@ import VoiceChatCore
 
 @main
 struct VoiceChatMacApp: App {
-    @StateObject private var viewModel = VoiceChatViewModel { backend, store, eventSink in
+    @StateObject private var viewModel = VoiceChatViewModel { backend, lmStudioBaseURL, store, eventSink in
         VoiceChatSessionController(
             recognizer: AppleSpeechRecognizer(),
-            llmClient: LMStudioClient(),
+            llmClient: LMStudioClient(baseURL: lmStudioBaseURL),
             synthesizer: makeSynthesizer(for: backend),
             corrector: makeCorrector(),
             store: store,
@@ -60,6 +60,17 @@ struct VoiceChatView: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
+            HStack(spacing: 6) {
+                Text("LM Studio")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                TextField("http://host:1234", text: $viewModel.lmStudioBaseURLText)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 240)
+                    .foregroundColor(viewModel.isLMStudioBaseURLValid ? Color.primary : Color.red)
+                    .disabled(viewModel.isTalking)
+                    .help("LM Studio base URL")
+            }
             Picker("TTS", selection: $viewModel.selectedTTSBackend) {
                 Text("Apple").tag(TTSBackend.apple)
                 Text("Piper").tag(TTSBackend.piper)

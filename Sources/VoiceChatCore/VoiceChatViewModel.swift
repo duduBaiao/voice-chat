@@ -3,24 +3,69 @@ import Foundation
 
 @MainActor
 public final class VoiceChatViewModel: ObservableObject {
-    public typealias ControllerFactory = (TTSBackend, ConversationStore, @escaping VoiceChatSessionController.EventSink) -> VoiceChatSessionController
+    public typealias ControllerFactory = (TTSBackend, URL, ConversationStore, @escaping VoiceChatSessionController.EventSink) -> VoiceChatSessionController
 
     @Published public private(set) var messages: [ChatMessage] = []
     @Published public private(set) var status: ConversationStatus = .idle
     @Published public private(set) var isTalking = false
     @Published public var selectedTTSBackend: TTSBackend = .apple
+    @Published public var lmStudioBaseURLText: String {
+        didSet {
+            settings.set(lmStudioBaseURLText, forKey: Self.lmStudioBaseURLSettingsKey)
+        }
+    }
 
     private let makeController: ControllerFactory
     private let conversationStore: ConversationStore
+    private let settings: UserDefaults
     private var currentController: VoiceChatSessionController?
     private var loopTask: Task<Void, Never>?
 
+    private static let lmStudioBaseURLSettingsKey = "lmStudioBaseURL"
+
     public init(
         conversationStore: ConversationStore = InMemoryConversationStore(),
+        settings: UserDefaults = .standard,
         makeController: @escaping ControllerFactory
     ) {
         self.conversationStore = conversationStore
+        self.settings = settings
+        lmStudioBaseURLText = settings.string(forKey: Self.lmStudioBaseURLSettingsKey)
+            ?? VoiceChatConfiguration().lmStudioBaseURL.absoluteString
         self.makeController = makeController
+    }
+
+    public var lmStudioBaseURL: URL? {
+        Self.normalizedBaseURL(from: lmStudioBaseURLText)
+    }
+
+    public var isLMStudioBaseURLValid: Bool {
+        lmStudioBaseURL != nil
+    }
+
+    public static func normalizedBaseURL(from text: String) -> URL? {
+        let trimmed = text.voiceChatTrimmed
+        guard !trimmed.isEmpty else { return nil }
+
+        let withScheme: String
+        if trimmed.contains("://") {
+            withScheme = trimmed
+        } else {
+            withScheme = "http://\(trimmed)"
+        }
+
+        guard var components = URLComponents(string: withScheme),
+              let scheme = components.scheme?.lowercased(),
+              scheme == "http" || scheme == "https",
+              components.host != nil else {
+            return nil
+        }
+
+        components.path = ""
+        components.query = nil
+        components.fragment = nil
+        guard let url = components.url else { return nil }
+        return url
     }
 
     public func toggleTalking() {
@@ -36,7 +81,12 @@ public final class VoiceChatViewModel: ObservableObject {
             guard let self else { return }
             while self.isTalking {
                 let backend = self.selectedTTSBackend
-                let controller = self.makeController(backend, self.conversationStore) { event in
+                guard let lmStudioBaseURL = self.lmStudioBaseURL else {
+                    self.apply(.error("Invalid LM Studio URL."))
+                    self.finishTalking()
+                    return
+                }
+                let controller = self.makeController(backend, lmStudioBaseURL, self.conversationStore) { event in
                     Task { @MainActor [weak self] in
                         self?.apply(event)
                     }
