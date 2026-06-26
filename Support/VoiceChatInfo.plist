@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleIdentifier</key>
+    <string>local.voice-chat</string>
+    <key>CFBundleName</key>
+    <string>Voice Chat</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Voice Chat uses the microphone to transcribe your spoken prompts.</string>
+    <key>NSAudioCaptureUsageDescription</key>
+    <string>Voice Chat captures microphone audio to transcribe your spoken prompts.</string>
+    <key>NSSpeechRecognitionUsageDescription</key>
+    <string>Voice Chat uses speech recognition to show interim and final transcripts.</string>
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsArbitraryLoads</key>
+        <true/>
+    </dict>
+</dict>
+</plist>
