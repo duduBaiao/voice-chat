@@ -121,9 +121,13 @@ public final class AppleSpeechRecognizer: NSObject, SpeechRecognizer {
         var endpointDetector = endpointDetectorTemplate
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
             request.append(buffer)
+            let hasTranscript = self?.lock.withLock {
+                self?.latestTranscript.voiceChatTrimmed.isEmpty == false
+            } ?? false
             let shouldFinish = endpointDetector.observe(
                 powerDecibels: buffer.voiceChatPowerDecibels,
-                timestamp: Date().timeIntervalSinceReferenceDate
+                timestamp: Date().timeIntervalSinceReferenceDate,
+                forceSpeechDetected: hasTranscript
             )
             self?.lock.withLock {
                 try? self?.audioFile?.write(from: buffer)

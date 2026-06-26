@@ -32,12 +32,26 @@ public struct AudioEndpointDetector: Sendable {
         noiseFloorDecibels = initialNoiseFloorDecibels
     }
 
-    public mutating func observe(powerDecibels: Float, timestamp: TimeInterval) -> Bool {
+    public mutating func observe(
+        powerDecibels: Float,
+        timestamp: TimeInterval,
+        forceSpeechDetected: Bool = false
+    ) -> Bool {
         guard !didEnd else { return false }
 
         observedFrames += 1
 
-        if observedFrames <= calibrationFrames {
+        if forceSpeechDetected {
+            hasDetectedSpeech = true
+            speechFrameCount = max(speechFrameCount, minimumSpeechFrames)
+            let inferredNoiseFloor = powerDecibels - speechMarginDecibels
+            if powerDecibels >= initialNoiseFloorDecibels + speechMarginDecibels,
+               noiseFloorDecibels > inferredNoiseFloor {
+                noiseFloorDecibels = inferredNoiseFloor
+            }
+        }
+
+        if observedFrames <= calibrationFrames && !hasDetectedSpeech {
             updateNoiseFloor(with: powerDecibels, weight: 0.35)
             return false
         }

@@ -121,6 +121,26 @@ final class AudioEndpointDetectorTests: XCTestCase {
         XCTAssertFalse(detector.observe(powerDecibels: -35, timestamp: 1.2))
         XCTAssertTrue(detector.observe(powerDecibels: -35, timestamp: 1.7))
     }
+
+    func testForcedSpeechDetectionRecoversWhenCalibrationSawSpeech() {
+        var detector = AudioEndpointDetector(
+            initialNoiseFloorDecibels: -60,
+            speechMarginDecibels: 10,
+            silenceMarginDecibels: 7,
+            trailingSilenceSeconds: 1,
+            minimumSpeechFrames: 3,
+            calibrationFrames: 8
+        )
+
+        for index in 0..<8 {
+            XCTAssertFalse(detector.observe(powerDecibels: -20, timestamp: Double(index) * 0.1))
+        }
+
+        XCTAssertFalse(detector.observe(powerDecibels: -20, timestamp: 0.8, forceSpeechDetected: true))
+        XCTAssertFalse(detector.observe(powerDecibels: -60, timestamp: 0.9, forceSpeechDetected: true))
+        XCTAssertFalse(detector.observe(powerDecibels: -60, timestamp: 1.4, forceSpeechDetected: true))
+        XCTAssertTrue(detector.observe(powerDecibels: -60, timestamp: 2.0, forceSpeechDetected: true))
+    }
 }
 
 final class LMStudioClientTests: XCTestCase {
