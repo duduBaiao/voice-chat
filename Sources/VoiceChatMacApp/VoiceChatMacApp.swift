@@ -3,9 +3,9 @@ import VoiceChatCore
 
 @main
 struct VoiceChatMacApp: App {
-    @StateObject private var viewModel = VoiceChatViewModel { backend, lmStudioBaseURL, store, eventSink in
+    @StateObject private var viewModel = VoiceChatViewModel { backend, lmStudioBaseURL, endpointDetector, store, eventSink in
         VoiceChatSessionController(
-            recognizer: AppleSpeechRecognizer(),
+            recognizer: AppleSpeechRecognizer(endpointDetector: endpointDetector),
             llmClient: LMStudioClient(baseURL: lmStudioBaseURL),
             synthesizer: makeSynthesizer(for: backend),
             corrector: makeCorrector(),
@@ -51,32 +51,50 @@ struct VoiceChatView: View {
     }
 
     private var header: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Voice Chat")
-                    .font(.title2.weight(.semibold))
-                Text(viewModel.status.rawValue.capitalized)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Voice Chat")
+                        .font(.title2.weight(.semibold))
+                    Text(viewModel.status.rawValue.capitalized)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
             }
-            Spacer()
-            HStack(spacing: 6) {
-                Text("LM Studio")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                TextField("http://host:1234", text: $viewModel.lmStudioBaseURLText)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(width: 240)
-                    .foregroundColor(viewModel.isLMStudioBaseURLValid ? Color.primary : Color.red)
-                    .disabled(viewModel.isTalking)
-                    .help("LM Studio base URL")
+
+            HStack(alignment: .center, spacing: 22) {
+                HStack(spacing: 8) {
+                    HeaderControlLabel("LLM Url")
+                    TextField("http://host:1234", text: $viewModel.lmStudioBaseURLText)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 300)
+                        .foregroundColor(viewModel.isLMStudioBaseURLValid ? Color.primary : Color.red)
+                        .disabled(viewModel.isTalking)
+                        .help("LM Studio base URL")
+                }
+
+                SettingsRowDivider()
+
+                HStack(spacing: 8) {
+                    HeaderControlLabel("TTS")
+                    TTSSegmentedControl(selection: $viewModel.selectedTTSBackend)
+                        .frame(width: 150)
+                }
+
+                SettingsRowDivider()
+
+                HStack(spacing: 8) {
+                    HeaderControlLabel("Silence settings")
+                    Slider(value: $viewModel.silenceSensitivity, in: 0...1)
+                        .frame(width: 150)
+                        .disabled(viewModel.isTalking)
+                        .help("Higher values stop listening sooner in noisy rooms")
+                }
+
+                Spacer()
             }
-            Picker("TTS", selection: $viewModel.selectedTTSBackend) {
-                Text("Apple").tag(TTSBackend.apple)
-                Text("Piper").tag(TTSBackend.piper)
-            }
-            .pickerStyle(.segmented)
-            .frame(width: 180)
         }
         .padding()
     }
@@ -147,6 +165,59 @@ struct VoiceChatView: View {
         case .stopped:
             return "Stopped"
         }
+    }
+}
+
+struct HeaderControlLabel: View {
+    private let title: String
+
+    init(_ title: String) {
+        self.title = title
+    }
+
+    var body: some View {
+        Text(title)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
+    }
+}
+
+struct SettingsRowDivider: View {
+    var body: some View {
+        Divider()
+            .frame(height: 28)
+    }
+}
+
+struct TTSSegmentedControl: View {
+    @Binding var selection: TTSBackend
+
+    var body: some View {
+        HStack(spacing: 0) {
+            segment("Apple", backend: .apple)
+            segment("Piper", backend: .piper)
+        }
+        .padding(2)
+        .background(Color(nsColor: .controlBackgroundColor))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private func segment(_ title: String, backend: TTSBackend) -> some View {
+        Button {
+            selection = backend
+        } label: {
+            Text(title)
+                .font(.body.weight(.medium))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 6)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(selection == backend ? Color.white : Color.primary)
+        .background(selection == backend ? Color.accentColor : Color.clear)
+        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
     }
 }
 

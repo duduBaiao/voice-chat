@@ -3,15 +3,24 @@ import Foundation
 
 @MainActor
 public final class VoiceChatViewModel: ObservableObject {
-    public typealias ControllerFactory = (TTSBackend, URL, ConversationStore, @escaping VoiceChatSessionController.EventSink) -> VoiceChatSessionController
+    public typealias ControllerFactory = (TTSBackend, URL, AudioEndpointDetector, ConversationStore, @escaping VoiceChatSessionController.EventSink) -> VoiceChatSessionController
 
     @Published public private(set) var messages: [ChatMessage] = []
     @Published public private(set) var status: ConversationStatus = .idle
     @Published public private(set) var isTalking = false
-    @Published public var selectedTTSBackend: TTSBackend = .apple
+    @Published public var selectedTTSBackend: TTSBackend = .piper {
+        didSet {
+            settings.set(selectedTTSBackend.rawValue, forKey: Self.selectedTTSBackendSettingsKey)
+        }
+    }
     @Published public var lmStudioBaseURLText: String {
         didSet {
             settings.set(lmStudioBaseURLText, forKey: Self.lmStudioBaseURLSettingsKey)
+        }
+    }
+    @Published public var silenceSensitivity: Double {
+        didSet {
+            settings.set(min(max(silenceSensitivity, 0), 1), forKey: Self.silenceSensitivitySettingsKey)
         }
     }
 
@@ -22,6 +31,8 @@ public final class VoiceChatViewModel: ObservableObject {
     private var loopTask: Task<Void, Never>?
 
     private static let lmStudioBaseURLSettingsKey = "lmStudioBaseURL"
+    private static let silenceSensitivitySettingsKey = "silenceSensitivity"
+    private static let selectedTTSBackendSettingsKey = "selectedTTSBackend"
 
     public init(
         conversationStore: ConversationStore = InMemoryConversationStore(),
@@ -32,6 +43,17 @@ public final class VoiceChatViewModel: ObservableObject {
         self.settings = settings
         lmStudioBaseURLText = settings.string(forKey: Self.lmStudioBaseURLSettingsKey)
             ?? VoiceChatConfiguration().lmStudioBaseURL.absoluteString
+        if let storedTTSBackend = settings.string(forKey: Self.selectedTTSBackendSettingsKey)
+            .flatMap(TTSBackend.init(rawValue:)) {
+            selectedTTSBackend = storedTTSBackend
+        } else {
+            selectedTTSBackend = .piper
+        }
+        if settings.object(forKey: Self.silenceSensitivitySettingsKey) == nil {
+            silenceSensitivity = 0.55
+        } else {
+            silenceSensitivity = min(max(settings.double(forKey: Self.silenceSensitivitySettingsKey), 0), 1)
+        }
         self.makeController = makeController
     }
 
@@ -41,6 +63,19 @@ public final class VoiceChatViewModel: ObservableObject {
 
     public var isLMStudioBaseURLValid: Bool {
         lmStudioBaseURL != nil
+    }
+
+    public var endpointDetector: AudioEndpointDetector {
+        Self.endpointDetector(silenceSensitivity: silenceSensitivity)
+    }
+
+    public static func endpointDetector(silenceSensitivity: Double) -> AudioEndpointDetector {
+        let sensitivity = min(max(silenceSensitivity, 0), 1)
+        return AudioEndpointDetector(
+            speechMarginDecibels: Float(14 - (sensitivity * 6)),
+            silenceMarginDecibels: Float(4 + (sensitivity * 8)),
+            trailingSilenceSeconds: 1.25 - (sensitivity * 0.45)
+        )
     }
 
     public static func normalizedBaseURL(from text: String) -> URL? {
@@ -86,7 +121,8 @@ public final class VoiceChatViewModel: ObservableObject {
                     self.finishTalking()
                     return
                 }
-                let controller = self.makeController(backend, lmStudioBaseURL, self.conversationStore) { event in
+                let endpointDetector = self.endpointDetector
+                let controller = self.makeController(backend, lmStudioBaseURL, endpointDetector, self.conversationStore) { event in
                     Task { @MainActor [weak self] in
                         self?.apply(event)
                     }

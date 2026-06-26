@@ -4,6 +4,8 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
+pkill -x VoiceChatMacApp 2>/dev/null || true
+
 swift build --product VoiceChatMacApp
 
 APP_DIR="$ROOT_DIR/.build/VoiceChat.app"

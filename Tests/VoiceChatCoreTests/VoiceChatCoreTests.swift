@@ -53,9 +53,12 @@ final class ConversationStoreTests: XCTestCase {
 final class AudioEndpointDetectorTests: XCTestCase {
     func testDoesNotEndBeforeSpeechIsDetected() {
         var detector = AudioEndpointDetector(
-            speechThresholdDecibels: -40,
+            initialNoiseFloorDecibels: -80,
+            speechMarginDecibels: 40,
+            silenceMarginDecibels: 10,
             trailingSilenceSeconds: 1,
-            minimumSpeechFrames: 2
+            minimumSpeechFrames: 2,
+            calibrationFrames: 0
         )
 
         XCTAssertFalse(detector.observe(powerDecibels: -80, timestamp: 0))
@@ -64,9 +67,12 @@ final class AudioEndpointDetectorTests: XCTestCase {
 
     func testEndsAfterSpeechThenTrailingSilence() {
         var detector = AudioEndpointDetector(
-            speechThresholdDecibels: -40,
+            initialNoiseFloorDecibels: -80,
+            speechMarginDecibels: 40,
+            silenceMarginDecibels: 10,
             trailingSilenceSeconds: 1,
-            minimumSpeechFrames: 2
+            minimumSpeechFrames: 2,
+            calibrationFrames: 0
         )
 
         XCTAssertFalse(detector.observe(powerDecibels: -20, timestamp: 0))
@@ -79,9 +85,12 @@ final class AudioEndpointDetectorTests: XCTestCase {
 
     func testSpeechResetsTrailingSilenceWindow() {
         var detector = AudioEndpointDetector(
-            speechThresholdDecibels: -40,
+            initialNoiseFloorDecibels: -80,
+            speechMarginDecibels: 40,
+            silenceMarginDecibels: 10,
             trailingSilenceSeconds: 1,
-            minimumSpeechFrames: 1
+            minimumSpeechFrames: 1,
+            calibrationFrames: 0
         )
 
         XCTAssertFalse(detector.observe(powerDecibels: -20, timestamp: 0))
@@ -90,6 +99,27 @@ final class AudioEndpointDetectorTests: XCTestCase {
         XCTAssertFalse(detector.observe(powerDecibels: -80, timestamp: 1.0))
         XCTAssertFalse(detector.observe(powerDecibels: -80, timestamp: 1.8))
         XCTAssertTrue(detector.observe(powerDecibels: -80, timestamp: 2.1))
+    }
+
+    func testAdaptsToBackgroundNoiseBeforeSpeech() {
+        var detector = AudioEndpointDetector(
+            initialNoiseFloorDecibels: -70,
+            speechMarginDecibels: 9,
+            silenceMarginDecibels: 6,
+            trailingSilenceSeconds: 1,
+            minimumSpeechFrames: 2,
+            calibrationFrames: 4
+        )
+
+        XCTAssertFalse(detector.observe(powerDecibels: -36, timestamp: 0.0))
+        XCTAssertFalse(detector.observe(powerDecibels: -35, timestamp: 0.1))
+        XCTAssertFalse(detector.observe(powerDecibels: -35, timestamp: 0.2))
+        XCTAssertFalse(detector.observe(powerDecibels: -34, timestamp: 0.3))
+        XCTAssertFalse(detector.observe(powerDecibels: -20, timestamp: 0.4))
+        XCTAssertFalse(detector.observe(powerDecibels: -20, timestamp: 0.5))
+        XCTAssertFalse(detector.observe(powerDecibels: -35, timestamp: 0.6))
+        XCTAssertFalse(detector.observe(powerDecibels: -35, timestamp: 1.2))
+        XCTAssertTrue(detector.observe(powerDecibels: -35, timestamp: 1.7))
     }
 }
 
@@ -412,8 +442,47 @@ final class VoiceChatSessionControllerTests: XCTestCase {
 
 @MainActor
 final class VoiceChatViewModelTests: XCTestCase {
+    func testDefaultsToPiperTTS() {
+        let suiteName = "VoiceChatViewModelTests-\(UUID().uuidString)"
+        let settings = UserDefaults(suiteName: suiteName)!
+        settings.removePersistentDomain(forName: suiteName)
+
+        let viewModel = VoiceChatViewModel(settings: settings) { _, _, _, store, _ in
+            VoiceChatSessionController(
+                recognizer: MockSpeechRecognizer(events: [.stopped]),
+                llmClient: MockLLMClient(chunks: []),
+                synthesizer: MockSynthesizer(),
+                store: store
+            )
+        }
+
+        XCTAssertEqual(viewModel.selectedTTSBackend, .piper)
+    }
+
+    func testTTSBackendPersists() {
+        let suiteName = "VoiceChatViewModelTests-\(UUID().uuidString)"
+        let settings = UserDefaults(suiteName: suiteName)!
+        settings.removePersistentDomain(forName: suiteName)
+        settings.set("apple", forKey: "selectedTTSBackend")
+
+        let viewModel = VoiceChatViewModel(settings: settings) { _, _, _, store, _ in
+            VoiceChatSessionController(
+                recognizer: MockSpeechRecognizer(events: [.stopped]),
+                llmClient: MockLLMClient(chunks: []),
+                synthesizer: MockSynthesizer(),
+                store: store
+            )
+        }
+
+        XCTAssertEqual(viewModel.selectedTTSBackend, .apple)
+
+        viewModel.selectedTTSBackend = .piper
+
+        XCTAssertEqual(settings.string(forKey: "selectedTTSBackend"), "piper")
+    }
+
     func testApplyEventsUpdatesChatAndStatus() {
-        let viewModel = VoiceChatViewModel { _, _, store, _ in
+        let viewModel = VoiceChatViewModel { _, _, _, store, _ in
             VoiceChatSessionController(
                 recognizer: MockSpeechRecognizer(events: [.stopped]),
                 llmClient: MockLLMClient(chunks: []),
@@ -437,7 +506,7 @@ final class VoiceChatViewModelTests: XCTestCase {
     }
 
     func testToggleTalkingStartsAndStops() async throws {
-        let viewModel = VoiceChatViewModel { _, _, store, _ in
+        let viewModel = VoiceChatViewModel { _, _, _, store, _ in
             VoiceChatSessionController(
                 recognizer: MockSpeechRecognizer(events: [.stopped]),
                 llmClient: MockLLMClient(chunks: []),
@@ -454,7 +523,7 @@ final class VoiceChatViewModelTests: XCTestCase {
     }
 
     func testAssistantDeltaStartsNewBubbleAfterNewUserMessage() {
-        let viewModel = VoiceChatViewModel { _, _, store, _ in
+        let viewModel = VoiceChatViewModel { _, _, _, store, _ in
             VoiceChatSessionController(
                 recognizer: MockSpeechRecognizer(events: [.stopped]),
                 llmClient: MockLLMClient(chunks: []),
@@ -481,7 +550,7 @@ final class VoiceChatViewModelTests: XCTestCase {
 
     func testClearChatRemovesVisibleMessagesAndStoreHistory() throws {
         let store = InMemoryConversationStore()
-        let viewModel = VoiceChatViewModel(conversationStore: store) { _, _, store, _ in
+        let viewModel = VoiceChatViewModel(conversationStore: store) { _, _, _, store, _ in
             VoiceChatSessionController(
                 recognizer: MockSpeechRecognizer(events: [.stopped]),
                 llmClient: MockLLMClient(chunks: []),
@@ -507,7 +576,7 @@ final class VoiceChatViewModelTests: XCTestCase {
         let settings = UserDefaults(suiteName: suiteName)!
         settings.removePersistentDomain(forName: suiteName)
 
-        let viewModel = VoiceChatViewModel(settings: settings) { _, _, store, _ in
+        let viewModel = VoiceChatViewModel(settings: settings) { _, _, _, store, _ in
             VoiceChatSessionController(
                 recognizer: MockSpeechRecognizer(events: [.stopped]),
                 llmClient: MockLLMClient(chunks: []),
@@ -522,6 +591,36 @@ final class VoiceChatViewModelTests: XCTestCase {
 
         XCTAssertEqual(viewModel.lmStudioBaseURL?.absoluteString, "http://localhost:1234")
         XCTAssertEqual(settings.string(forKey: "lmStudioBaseURL"), "localhost:1234/v1/chat/completions")
+    }
+
+    func testSilenceSensitivityDefaultsAndPersists() {
+        let suiteName = "VoiceChatViewModelTests-\(UUID().uuidString)"
+        let settings = UserDefaults(suiteName: suiteName)!
+        settings.removePersistentDomain(forName: suiteName)
+
+        let viewModel = VoiceChatViewModel(settings: settings) { _, _, _, store, _ in
+            VoiceChatSessionController(
+                recognizer: MockSpeechRecognizer(events: [.stopped]),
+                llmClient: MockLLMClient(chunks: []),
+                synthesizer: MockSynthesizer(),
+                store: store
+            )
+        }
+
+        XCTAssertEqual(viewModel.silenceSensitivity, 0.55, accuracy: 0.001)
+
+        viewModel.silenceSensitivity = 0.9
+
+        XCTAssertEqual(settings.double(forKey: "silenceSensitivity"), 0.9, accuracy: 0.001)
+    }
+
+    func testSilenceSensitivityChangesDetectorTuning() {
+        let low = VoiceChatViewModel.endpointDetector(silenceSensitivity: 0)
+        let high = VoiceChatViewModel.endpointDetector(silenceSensitivity: 1)
+
+        XCTAssertGreaterThan(low.speechMarginDecibels, high.speechMarginDecibels)
+        XCTAssertLessThan(low.silenceMarginDecibels, high.silenceMarginDecibels)
+        XCTAssertGreaterThan(low.trailingSilenceSeconds, high.trailingSilenceSeconds)
     }
 
     func testInvalidLMStudioBaseURLIsRejected() {

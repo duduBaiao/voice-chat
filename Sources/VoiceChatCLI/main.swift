@@ -107,10 +107,10 @@ struct VoiceChatCLI {
 
     private static func makeSynthesizer() -> SpeechSynthesizer {
         let requested = ProcessInfo.processInfo.environment["VOICE_CHAT_TTS"]?.lowercased()
-        if requested == "piper" {
-            return PiperSynthesizer()
+        if requested == "apple" {
+            return AppleSaySynthesizer()
         }
-        return AppleSaySynthesizer()
+        return PiperSynthesizer()
     }
 
     private static func makeCorrector() -> FinalTranscriptCorrector {
@@ -155,8 +155,8 @@ struct VoiceChatCLI {
         Environment:
           LM_STUDIO_BASE_URL          Defaults to http://100.127.238.44:1234
           LM_STUDIO_MODEL             Defaults to google/gemma-4-26b-a4b-qat
-          VOICE_CHAT_TTS              apple or piper, defaults to apple
-          PIPER_BIN/PIPER_MODEL       Required for Piper
+          VOICE_CHAT_TTS              apple or piper, defaults to piper
+          PIPER_BIN/PIPER_MODEL       Optional when repo-local Piper is installed
           WHISPER_BIN/WHISPER_MODEL   Optional Whisper final correction
         """)
     }
